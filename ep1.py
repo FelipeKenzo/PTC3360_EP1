@@ -1,11 +1,17 @@
-import os, sys, argparse, subprocess, re
+import os, sys, argparse, subprocess, re, platform
+import time
+from tqdm import tqdm
 
-def 
+def EstimatedRTT(prevEstRTT, sampleRTT, alpha):
+	return alpha*prevEstRTT + (1-alpha)*sampleRTT
 
 def main():
-    PING = ["ping", "localhost", "-c", "1"]
-    COUNT = 500
+    PING = ["ping", "google.com", "-c", "1"] # List of shell commands for subprocess.run
+    COUNT = 500	# number of SampleRTT values
+    ALPHA = 0.9 # EstimatedRTT coefficient
+    PATTERN = '(?<=time=)\d{1,3}\.\d{1,3}' # regex for parsing system response to ping command.
 
+    # Command line arguments parsing
     parser = argparse.ArgumentParser(description = "Simple RTT analysis.")
 
     parser.add_argument("-e", "--endpoint", metavar = "addr", help = "The target address for the pings.\nDefault is \"localhost\".")
@@ -27,17 +33,29 @@ def main():
     elif args.ipv6:
         PING.append("-6")
 
-    print(PING)
+    # Data lists initialization
+    sampleRTT = [0]*COUNT
+    estimatedRTT = [0]*COUNT
 
-    sampleRTT = []
-
-    for i in range(COUNT):
+    # Acquire SampleRTT series.
+    for i in tqdm(range(COUNT)):
         response = subprocess.run(PING, stdout = subprocess.PIPE)
-        print(response.stdout.decode("UTF-8"))
-        sampleRTT = re.findall('(?<=time=)\d{1,3}\.\d{1,3}', response.stdout.decode("UTF-8"))
-        sampleRTT.append(rtt[0])
+        currentRTT = re.findall(PATTERN, response.stdout.decode("utf-8"))
+        print
+        if currentRTT.count != 0:
+        	sampleRTT[i] = currentRTT[0]
+        else:
+        	i -= 1
     
-    print (rttList)
+    print (sampleRTT)
+
+    estimatedRTT[0] = sampleRTT[0]
+
+    for i in range(1, estimatedRTT.count-1):
+    	estimatedRTT[i] = EstimatedRTT(estimatedRTT[i-1], sampleRTT[i], ALPHA)
+
+    print (estimatedRTT)
+
 
 if __name__ == "__main__":
     main()
