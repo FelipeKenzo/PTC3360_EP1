@@ -1,8 +1,9 @@
-import os, sys, argparse, re, subprocess, time
+import os, sys, argparse, re, subprocess, time, json
 import statistics as st
 import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
+from urllib import request
 
 def EstimatedRTT(prevEstRTT, sampleRTT, alpha):
 	return (1-alpha)*prevEstRTT + alpha*sampleRTT
@@ -14,11 +15,9 @@ def TimeoutInterval(estimatedRTT, devRTT):
     return estimatedRTT + 4*devRTT
 
 def main():
-    alpha = 0.125 # EstimatedRTT coefficient
-    beta = 0.25 # DevRTT coefficient
-    count = 500	# number of SampleRTT values
-    endpoint = "www.msu.ru"
-    rePattern = '(?<=time=)\d{1,3}\.?\d{1,3}'
+    count = 500	# number of SampleRTT values.
+    endpoint = "www.google.com" # host to be ping.
+    ping = ["ping", endpoint, "-c", "1", "-W", "1"] # subprocess ping command.
 
     # Command line arguments parsing
     parser = argparse.ArgumentParser(description = "Simple RTT analysis.")
@@ -37,35 +36,33 @@ def main():
     if args.count is not None and args.count >= 1:
         count = args.count
     
-    cmd = ["ping", endpoint, "-c", "1", "-W", "1"]
 
     if args.ipv4:
-        cmd.append("-4")
+        ping.append("-4")
     elif args.ipv6:
-        cmd.append("-6")
+        ping.append("-6")
 
     # Acquire SampleRTT data.
-    print("Acquiring data for " + str(count) + " pings. This may take a while.")
+    print(f"Acquiring data for {str(count)} pings to {endpoint}. This may take a while.\n")
+    
+    timeRe = '(?<=time=)\d{1,3}\.?\d{1,3}' # Regular expression for RTT time.
     
     sampleRTT = []
     for i in tqdm(range(count)):
-        # Execute cmd process to get raw ping data
-        proc = subprocess.run(cmd, encoding="utf-8", stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        rawRTT = proc.stdout
+        # Execute ping process to get raw ping data
+        rawRTT = subprocess.run(ping, encoding="utf-8", stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout
 
         # Parse raw SampleRTT data to float list (ms)
-        rtt = re.findall(rePattern, rawRTT)
+        rtt = re.findall(timeRe, rawRTT)
 
         # Check if ping succeeded
         if len(rtt) == 1:
             sampleRTT.append(float(rtt[0]))
-            if float(rtt[0] == 0):
-                print (rawRTT)
-
-        #time.sleep(0.5) # Pings without delay seem to cause timeouts
-
 
     # Calculate EstimatedRTT and DevRTT lists
+    alpha = 0.125 # EstimatedRTT coefficient
+    beta = 0.25 # DevRTT coefficient
+
     estimatedRTT = [0]*len(sampleRTT)
     devRTT = [0]*len(sampleRTT)
     timeoutInterval = [0]*len(sampleRTT)
@@ -89,7 +86,7 @@ def main():
     print(f"EstimatedRTT   : mean = {round(mean[1], 5)}ms / stdev =  {round(stDeviation[1], 5)}ms")
     print(f"DevRTT         : mean = {round(mean[2], 5)}ms / stdev =  {round(stDeviation[2], 5)}ms")
     print(f"TimeoutInterval: mean = {round(mean[3], 5)}ms / stdev =  {round(stDeviation[3], 5)}ms")
-    print(f"Packet loss: {(count-len(sampleRTT))*100/count}%")
+    print(f"Packet loss: {(count-len(sampleRTT))*100/count}%\n")
 
     # Plotting
     x = np.arange(len(sampleRTT))
@@ -116,6 +113,54 @@ def main():
     for i, v in enumerate(y):
         plt.text(index[i] - 0.02, v + 0.1, str(v))
     plt.show()
+
+    # Traceroute:
+    print(f"\nExecuting traceroute to {endpoint}...\n")
+
+    trace = ["traceroute", endpoint, "-I"] # Subprocess traceroute command.
+
+    # Execute traceroute subprocess to get raw data.
+    rawTraceroute = subprocess.run(trace, encoding="utf-8", stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout
+    print (rawTraceroute)
+
+    # Parse raw traceroute data for IP adresses.
+    ipRe = "(?<=\()\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}"
+    traceroute = re.findall(ipRe, rawTraceroute)
+
+    addresses  = []
+    latitudes  = []
+    longitudes = []
+
+    if traceroute[0] == traceroute[len(traceroute)-1]:
+        print ("Success!\n")
+
+        # Acquire location information via 'ipstack' API.
+        token = "?access_key=e9813e976ddae123776ef76ad2e4fbd7"
+        url = "http://api.ipstack.com/"
+
+        print(f"Aquiring geolocation data for {len(traceroute)-1} IPs.\n")
+
+        for i in tqdm(range(len(traceroute)-1)):
+            req = url + traceroute[i+1] + token
+            resp = request.urlopen(req)
+
+            if resp.code == 200:
+                rawData = resp.read()
+                encoding = resp.info().get_content_charset('utf-8')
+                data = json.loads(rawData.decode(encoding))
+
+                addresses.append(data["zip"])
+                latitudes.append(data["latitude"])
+                longitudes.append(data["longitude"])
+    
+    print("\n" + latitudes)
+    print("\n" + longitudes)
+    print("\n" + addresses)
+
+
+
+
+
 
 if __name__ == "__main__":
     main()
