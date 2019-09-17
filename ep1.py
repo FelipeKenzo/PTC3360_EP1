@@ -1,9 +1,10 @@
-import os, sys, argparse, re, subprocess, time, json
+import os, sys, argparse, re, subprocess, time, json, math
 import statistics as st
 import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
 from urllib import request
+import gmplot
 
 def EstimatedRTT(prevEstRTT, sampleRTT, alpha):
 	return (1-alpha)*prevEstRTT + alpha*sampleRTT
@@ -13,6 +14,12 @@ def DevRTT(prevDevRTT, sampleRTT, estimatedRTT, beta):
 
 def TimeoutInterval(estimatedRTT, devRTT):
     return estimatedRTT + 4*devRTT
+
+def great_circle(lon1, lat1, lon2, lat2):
+    lon1, lat1, lon2, lat2 = map(math.radians, [lon1, lat1, lon2, lat2])
+    return 6371 * (
+        math.acos(math.sin(lat1) * math.sin(lat2) + math.cos(lat1) * math.cos(lat2) * math.cos(lon1 - lon2)
+        ))
 
 def main():
     count = 500	# number of SampleRTT values.
@@ -88,34 +95,8 @@ def main():
     print(f"TimeoutInterval: mean = {round(mean[3], 5)}ms / stdev =  {round(stDeviation[3], 5)}ms")
     print(f"Packet loss: {(count-len(sampleRTT))*100/count}%\n")
 
-    # Plotting
-    x = np.arange(len(sampleRTT))
-
-    plt.figure(1)
-    plt.plot(x, sampleRTT, "red", label="SampleRTT")
-    plt.plot(x, estimatedRTT, "green", label="EstimatedRTT")
-    plt.plot(x, devRTT, "blue", label="DevRTT")
-    plt.plot(x, timeoutInterval, "fuchsia", label="TimeoutInterval")
-    plt.legend(loc="best")
-    plt.title("RTT Analysis \"" + endpoint + "\"")
-    plt.ylabel("Time [ms]")
-    plt.xlabel("Ping iteration")
-    plt.show()
-
-    label = ["Success", "Timeout"]
-    index = [0, 1]
-    y = [len(sampleRTT), count - len(sampleRTT)]
-    plt.figure(2)
-    plt.bar(index, y)
-    plt.ylabel("No. pings")
-    plt.xticks(index, label)
-    plt.title("Ping \"" + endpoint + "\" timeout comparison")
-    for i, v in enumerate(y):
-        plt.text(index[i] - 0.02, v + 0.1, str(v))
-    plt.show()
-
     # Traceroute:
-    print(f"\nExecuting traceroute to {endpoint}...\n")
+    print(f"Executing traceroute to {endpoint}...\n")
 
     trace = ["traceroute", endpoint, "-I"] # Subprocess traceroute command.
 
@@ -149,18 +130,58 @@ def main():
                 encoding = resp.info().get_content_charset('utf-8')
                 data = json.loads(rawData.decode(encoding))
 
-                addresses.append(data["zip"])
-                latitudes.append(data["latitude"])
-                longitudes.append(data["longitude"])
+                if data["city"] is not None and data ["country_name"] is not None:
+                    addresses.append(data["city"] + ", " + data["country_name"])
+                if data["latitude"] is not None:
+                    latitudes.append(data["latitude"])
+                if data["longitude"] is not None:
+                    longitudes.append(data["longitude"])
+
+    print("")
+
+    for i in range(len(addresses)):
+        print(addresses[i] + ": (" + str(latitudes[i]) + str(longitudes[i]) + ")")
     
-    print("\n" + latitudes)
-    print("\n" + longitudes)
-    print("\n" + addresses)
+    # Calculate estimated travel distance
+    totalDistance = 0
+    for i in range(len(addresses)-1):
+        totalDistance += great_circle(longitudes[i], latitudes[i], longitudes[i+1], latitudes[i+1])
 
+    print (f"\nTotal estimated distance: {totalDistance} km.")
+    
+    # Plotting
+    # [Plotting] data series
+    x = np.arange(len(sampleRTT))
+    plt.figure(1)
+    plt.plot(x, sampleRTT, "red", label="SampleRTT")
+    plt.plot(x, estimatedRTT, "green", label="EstimatedRTT")
+    plt.plot(x, devRTT, "blue", label="DevRTT")
+    plt.plot(x, timeoutInterval, "fuchsia", label="TimeoutInterval")
+    plt.legend(loc="best")
+    plt.title("RTT Analysis \"" + endpoint + "\"")
+    plt.ylabel("Time [ms]")
+    plt.xlabel("Ping iteration")
+    plt.show()
 
-
-
-
+    # [Plotting] Success x Timeout
+    label = ["Success", "Timeout"]
+    index = [0, 1]
+    y = [len(sampleRTT), count - len(sampleRTT)]
+    plt.figure(2)
+    plt.bar(index, y)
+    plt.ylabel("No. pings")
+    plt.xticks(index, label)
+    plt.title("Ping \"" + endpoint + "\" timeout comparison")
+    for i, v in enumerate(y):
+        plt.text(index[i] - 0.02, v + 0.1, str(v))
+    plt.show()
+    
+    # [Plotting] traceroute geolocations
+    gmap = gmplot.GoogleMapPlotter(0.0, 0.0, 5)
+    gmap.apikey = "AIzaSyANWblpLPcTfwZ7W3Fx6DqMUhvWLX6c3hI"
+    gmap.scatter(latitudes, longitudes, 'red', size=50, marker=False)
+    gmap.plot(latitudes, longitudes, 'cornflowerblue', edge_width = 4.0)
+    gmap.draw("/home/felipekenzo/Desktop/teste.html")
 
 if __name__ == "__main__":
     main()
