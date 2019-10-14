@@ -116,7 +116,7 @@ def main():
         print ("Success!\n")
 
         # Acquire location information via 'ipstack' API.
-        token = "?access_key=e9813e976ddae123776ef76ad2e4fbd7"
+        token = "?access_key="
         url = "http://api.ipstack.com/"
 
         print(f"Aquiring geolocation data for {len(traceroute)-1} IPs.\n")
@@ -178,7 +178,7 @@ def main():
     
     # [Plotting] traceroute geolocations
     gmap = gmplot.GoogleMapPlotter(0.0, 0.0, 5)
-    gmap.apikey = "AIzaSyANWblpLPcTfwZ7W3Fx6DqMUhvWLX6c3hI"
+    gmap.apikey = ""
     gmap.scatter(latitudes, longitudes, 'red', size=50, marker=False)
     gmap.plot(latitudes, longitudes, 'cornflowerblue', edge_width = 4.0)
     gmap.draw("/home/felipekenzo/Desktop/teste.html")
